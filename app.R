@@ -25,16 +25,15 @@ ui <- fluidPage(
                "inappropriate answers about an OLS model. The questions deserve serious consideration.",
                "If you answer yes to the three questions below, you will see OLS results in the",
                "'Model Output' tab."),
-
+      
       checkboxInput("header", "The first row includes variable names", TRUE),
-  
+      
       radioButtons("first", "Is the first variable your dependent variable?",
                    choices = c("Yes", "No"),
                    selected = "No"),
-      
-      radioButtons("continuous", "Is your dependent variable continuous?",
-                   choices = c("Yes", "No"),
-                   selected = "No"),
+      radioButtons("continuous", "Is your dependent variable binary (bar passage) or continuous (GPA)?",
+                   choices = c("Binary", "Continuous"),
+                   selected = "Binary"),
       radioButtons("obs", "Do you have at least 30 observations",
                    choices = c("Yes", "No"),
                    selected = "No"),
@@ -79,13 +78,10 @@ server <- function(input, output) {
     first <- ifelse(input$first == "No", 
                     "WARNING: This version requires that the first column be your dependent variable",
                     NA)
-    continuous <- ifelse(input$continuous == "No", 
-                         "WARNING: OLS won't work when your dependent variable is not continuous",
-                         NA)
     obs <- ifelse(input$obs == "No", "WARNING: You really shouldn't run a regression with too few observations",
                   NA)
     
-    errors <- rbind(first, continuous, obs) %>%
+    errors <- rbind(first, obs) %>%
       as_tibble() %>%
       dplyr::rename(Warnings = 1) %>%
       na.omit()
@@ -94,28 +90,44 @@ server <- function(input, output) {
     
     if(input$first == "No") {
       return(errors)
-    }
-    else {
-      if(input$continuous == "Yes") {
-        
+    } else {
         if(input$obs == "Yes") {
           
-          model <- lm(df[, 1] ~ ., data = df[, -1])
+          if(input$continuous == "Continuous") { 
+            
+            model <- lm(df[, 1] ~ ., data = df[, -1])
           
-          broom::tidy(model) %>%
-            dplyr::mutate(term = ifelse(term == "(Intercept)", "Intercept", term),
-                          significance = ifelse(p.value < as.numeric(input$sig), "Significant", "Not Significant")) %>%
-            dplyr::select(-std.error, -statistic, -p.value) %>%
-            dplyr::rename(variable = term,
-                          influence = estimate)
+            broom::tidy(model) %>%
+              dplyr::mutate(term = ifelse(term == "(Intercept)", "Intercept", term),
+                            significance = ifelse(p.value < as.numeric(input$sig), "Significant", "Not Significant")) %>%
+              dplyr::select(-std.error, -statistic, -p.value) %>%
+              dplyr::rename(variable = term,
+                            influence = estimate)
           
-        } else {
-          return(errors)
-        }
-      } else {
-        return(errors)
-      }
-      
+            } else {
+              
+              df[, 1] <- as.factor(df[, 1])
+              
+              if(df[, 1] %in% c(0, 1)) {
+              
+              model <- glm(df[, 1] ~ ., data = df[, -1], family = "binomial")
+            
+              broom::tidy(model) %>%
+                dplyr::mutate(term = ifelse(term == "(Intercept)", "Intercept", term),
+                              significance = ifelse(p.value < as.numeric(input$sig), "Significant", "Not Significant")) %>%
+                dplyr::select(-std.error, -statistic, -p.value) %>%
+                dplyr::rename(variable = term,
+                              influence = estimate)
+              } else {
+                error <- 
+                  tibble("Your dependent variable should be a 0 or 1 (0 is commonly the 'fail')") %>%
+                  dplyr::rename(Warning = 1) 
+              }
+            }
+          } else {
+            return(errors)
+            }
+        
     }
     
     
